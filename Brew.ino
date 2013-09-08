@@ -4,41 +4,69 @@
 #include <OneWire.h>
 #include <Ethernet.h>
 
+//define out buttons. change these to suit your setup.
+//which analogue input have you connected your button array to?
 int buttonPin = A0;
+//and where is your temperature sensor connected via 1-wire?
 int tempPin = A1;
+//the below is the pin that controls your heating element via a relay
 int heatPin = 12;
+//the below is the pin that controls your cooling element (or fridge compressor) via a relay
 int coolPin = 13;
+
+//tracks the operation mode
+//0 = idle
+//1 = cooling
+//2 = heating
 int mode = 0;
 
+//initialise the OneWire library on your temperature pin
 OneWire onewire(tempPin);
 
-//used for smoothing readings
+//all used for smoothing readings as they come in, to prevent spikes. 
+//will implement this soon.
 const int maxReadings = 10;
 int numReadings = 0;
-
 float tempReadings[maxReadings];   
 int readingIndex = 0;                  
 float readingTotal = 0;                 
 float readingAverage = 0;                
 
+//used when reading from the 1-wire temperature sensor. stores the address of the first DS18B20 sensor found on the bus.
 byte tempAddr[8];
 
+//some sensible starting values. plan to use the SD card to save/restore these.
 float targetTemp = 20.5;
 float currentTemp;
 float tempDiff = 2.5;
 
+//did we find a sensor? used during detection logic and loop to 
+//prevent us from making any temperature based decisions if the 
+//sensor was not detected.
 boolean sensorFound = false;
+//are we mid-conversion? needed because we only update temperature
+//once per second, however i use a 100 msec delay in the loop to keep the LCD
+//and keypad responsive
 int sensorConverting = false;
 
+//change the below if you would like a less stupid MAC on your ethernet connection
 byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+//the ip you would like to reach the controller on
 byte ip[] = {192,168,1,6};
+//your network's internet gateway
 byte gateway[] = {192,168,1,1};
+//your network's subnet
 byte subnet[] = {255,255,255,0};
-
+//set up a server on port 80
 EthernetServer server(80);
 
+//this is set when we've correctly identified that a button is being pressed,
+//so we can fire the button handler. this is reset once the button is handled and released
+//to avoid super-rapid-repeated-button-presses whilst the button is being pressed.
 int buttonPressed = 0;
 
+//some constants to pretty up the code.
+//magic numbers are the devil.
 #define BUTTON_NONE               0 
 #define BUTTON_RIGHT              1 
 #define BUTTON_UP                 2 
@@ -46,12 +74,14 @@ int buttonPressed = 0;
 #define BUTTON_LEFT               4 
 #define BUTTON_SELECT             5 
 
+//more constants just to help readability
 #define MODE_IDLE                 0
 #define MODE_COOL                 1
 #define MODE_HEAT                 2
 
 
-// initialize the library with the numbers of the interface pins
+// initialize the library with the numbers of the interface pins you are using
+// see the LiquidCrystal documentation for a more detailed explanation
 LiquidCrystal lcd( 8, 9, 4, 5, 6, 7 );
 
 void getCurrentTemp()
