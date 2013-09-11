@@ -81,7 +81,7 @@ int buttonPressed = 0;
 
 
 // initialize the library with the numbers of the interface pins you are using
-// see the LiquidCrystal documentation for a more detailed explanation
+// see the LiquidCrystal documentation for a more detailed explanationeeeeeeeeee
 LiquidCrystal lcd( 8, 9, 4, 5, 6, 7 );
 
 void getCurrentTemp()
@@ -188,6 +188,30 @@ void setup() {
    }
 }
 
+void switchRelays() {
+  //if cooling and temp less than minimum, switch to idle, turn off relays
+  if (mode == MODE_COOL && currentTemp < (targetTemp - tempDiff)) {
+    digitalWrite(coolPin, LOW);
+    digitalWrite(heatPin, LOW);
+    mode = MODE_IDLE;
+  //if heating and temp higher than maximum, switch to idle, turn off relays
+  } else if (mode == MODE_HEAT && currentTemp > (targetTemp + tempDiff)) {
+    digitalWrite(coolPin, LOW);
+    digitalWrite(heatPin, LOW);
+    mode = MODE_IDLE;
+  //if idle and temp higher than maxium, start cooling
+  } else if (mode == MODE_IDLE && currentTemp > (targetTemp + tempDiff)) {
+    digitalWrite(coolPin, HIGH);
+    digitalWrite(heatPin, LOW);
+    mode = MODE_COOL;
+  //if idle and temp lower than minimum, start heating
+  } else if (mode == MODE_IDLE && currentTemp < (targetTemp + tempDiff)) {
+    digitalWrite(coolPin, LOW);
+    digitalWrite(heatPin, HIGH);
+    mode = MODE_HEAT;
+  }
+}
+
 void updateLCD() {
     //show target temp
     lcd.setCursor(3,0);
@@ -229,6 +253,9 @@ void loop() {
     handleButton(button);
     
     //temperature logic
+    
+    
+    //update the LCD...
     updateLCD();
     
       //handle TCP client
