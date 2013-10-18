@@ -10,9 +10,9 @@ int buttonPin = A0;
 //and where is your temperature sensor connected via 1-wire?
 int tempPin = A1;
 //the below is the pin that controls your heating element via a relay
-int heatPin = 12;
+int heatPin = A5;
 //the below is the pin that controls your cooling element (or fridge compressor) via a relay
-int coolPin = 13;
+int coolPin = A4;
 
 //tracks the operation mode
 //0 = idle
@@ -241,6 +241,63 @@ void updateLCD() {
     }
 }
 
+void checkClients() {
+    //handle TCP client
+    EthernetClient client = server.available();
+    if (client) {
+      // read bytes from the incoming client and write them back
+      // to any clients connected to the server:
+      boolean currentLineIsBlank = true;
+      while (client.connected()) {
+        if (client.available()) {
+          char c = client.read();
+          Serial.write(c);
+          // if you've gotten to the end of the line (received a newline
+          // character) and the line is blank, the http request has ended,
+          // so you can send a reply
+          if (c == '\n' && currentLineIsBlank) {
+            // send a standard http response header
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-Type: application/json");
+            client.println("Connection: close");  // the connection will be closed after completion of the response
+            client.println();
+            client.println("{");
+            // output the current temp
+            client.print("currenttemp: ");
+            client.print(currentTemp);
+            client.println(",");
+            // output the target temp
+            client.print("targettemp: ");
+            client.print(targetTemp);
+            client.println(",");
+            // output the temp difference
+            client.print("tempdiff: ");
+            client.print(tempDiff);
+            client.println(",");
+            // output the temp difference
+            client.print("mode: ");
+            client.print(mode);
+            client.println("");
+            //end json file
+            client.println("}");
+            break;
+          }
+          if (c == '\n') {
+            // you're starting a new line
+            currentLineIsBlank = true;
+          } else if (c != '\r') {
+            // you've gotten a character on the current line
+            currentLineIsBlank = false;
+        }
+      }
+    }
+    // give the web browser time to receive the data
+    delay(1);
+    // close the connection:
+    client.stop();
+    }
+}
+
 void loop() {
 
     //get temperature reading for primary temp
@@ -253,18 +310,13 @@ void loop() {
     handleButton(button);
     
     //temperature logic
-    
+    switchRelays();
     
     //update the LCD...
     updateLCD();
     
-      //handle TCP client
-    EthernetClient client = server.available();
-    if (client) {
-      // read bytes from the incoming client and write them back
-      // to any clients connected to the server:
-      server.write(client.read());
-    }
+    //handle tcp ip client
+    checkClients();
    
    //small delay
    delay(100); 
@@ -299,14 +351,16 @@ void handleButton(int button) {
     switch (button)
      {
         case BUTTON_UP :
-          targetTemp += 0.5;
+          targetTemp += 0.1;
           break;
         case BUTTON_DOWN :
-          targetTemp -= 0.5;
+          targetTemp -= 0.1;
           break;
         case BUTTON_LEFT :
+          tempDiff -= 0.1;
           break;
         case BUTTON_RIGHT :
+          tempDiff += 0.1;
           break;
         case BUTTON_SELECT :
           break;
