@@ -8,19 +8,19 @@
 
 //define out buttons. change these to suit your setup.
 //which analogue input have you connected your button array to?
-int buttonPin = A1;
+int buttonPin = A0;
 //and where is your temperature sensor connected via 1-wire?
-int tempPin = A2;
+int tempPin = A1;
 //the below is the pin that controls your heating element via a relay
-int heatPin = A3;
+int heatPin = A2;
 //the below is the pin that controls your cooling element (or fridge compressor) via a relay
-int coolPin = A4;
+int coolPin = A3;
 
 //tracks the operation mode
 //0 = idle
 //1 = cooling
 //2 = heating
-//3 = disabled
+//3 = disabled (fridge on! useful for cooling hot wort)
 int mode = 0;
 
 //overshoot percentages
@@ -39,7 +39,7 @@ OneWire onewire(tempPin);
 byte internaltempAddr[8];
 byte externaltempAddr[8];
 
-//some sensible starting values. plan to use the SD card to save/restore these.
+//some sensible starting values. these are saved in the EEPROM.
 float targetTemp = 21.0;
 float currentinternalTemp;
 float currentexternalTemp;
@@ -61,6 +61,7 @@ static byte ip[] = {192,168,1,6};
 //your network's internet gateway
 static byte gateway[] = {192,168,1,1};  
 
+//a buffer for received packets
 byte Ethernet::buffer[500];
 BufferFiller bfill;
 
@@ -84,12 +85,16 @@ int buttonPressed = 0;
 #define MODE_HEAT                 2
 #define MODE_DISABLED             3
 
+//if you need to change these, they're in milliseconds.
 #define REST_COMPRESSOR 1780000
 #define STARTUP_DELAY 30000
 #define COMPRESSOR_MIN_RUN 30000
+
 // initialize the library with the numbers of the interface pins you are using
 // see the LiquidCrystal documentation for a more detailed explanation
-LiquidCrystal lcd( 5, 6, 1, 2, 3, 4 );
+// the below is a fairly standard wiring for an LCD shield, change these 
+// if you've wired up a character LCD directly.
+LiquidCrystal lcd( 8, 9, 4, 5, 6, 7 );
 
 //pinched from uberfridge (www.elcojacobs.com)
 float eepromReadFloat(int address){
@@ -143,6 +148,12 @@ void loadSettings(void){
   
 }
 
+//this attempts to find a pair of temperature sensors on the 1wire bus.
+//this checks for DS18B20 sensors. If your internal (in the wort or taped to
+//the side of the vessel) sensor and external sensor (outside the fridge) are
+//are being detected in the wrong order, modify the below to assign the first
+//and second detected sensors to internaltempAddr and externaltempAddr
+//in the order they are being detected.
 void findTempSensors()
 {
   int sensorCount = 0;
@@ -162,6 +173,7 @@ void findTempSensors()
    }
 }
 
+//read the temperatures!
 void getCurrentTemps()
 {
   int tempByte;
@@ -231,6 +243,7 @@ void getCurrentTemps()
   }
 }
 
+//setup the various moving parts
 void setup() {
   
   Serial.begin(9600);
@@ -269,11 +282,12 @@ void setup() {
    findTempSensors();
 }
 
+//this function controls the relays based on temperature and operation mode
 void switchRelays() {
   if (mode == MODE_DISABLED) {
-    //disable mode
-    digitalWrite(coolPin, LOW);
-    digitalWrite(coolPin, LOW);
+    //disable mode - 
+    digitalWrite(coolPin, HIGH);
+    digitalWrite(heatPin, LOW);
     mode = MODE_DISABLED;
   }
   else if (!sensorsFound) {
@@ -282,7 +296,12 @@ void switchRelays() {
     digitalWrite(coolPin, LOW);
     mode = MODE_IDLE;
   } else if (mode == MODE_COOL) {
-    //this is where we need to account for overshoot!
+    //this is where we need to account for overshoot! your fridge will have
+    //a certain lag period between the temperature of the refridgeration 
+    //loop reaching target temperature, and the temperature of the wort 
+    //reaching target temperature. We use the overshoot delay to cut off
+    //the compressor before the wort cools to target temp, as the temperature
+    //will continue to drop once the compressor is shut off. 
     //if the temperature is still higher than our target temp + estimated idle cooling (overshoot), 
     //or if the compressor has been running for less than 10 seconds, keep cooling
     if (currentinternalTemp - (currentinternalTemp * COLD_OVERSHOOT) >= (targetTemp - tempDiff) || (millis() - timeCooling < COMPRESSOR_MIN_RUN)) {
@@ -297,6 +316,7 @@ void switchRelays() {
       lastCool = millis();
     }
   //if heating and temp higher than maximum, switch to idle, turn off relays
+  //I just use a small lightbulb in the fridge for this, it works well!
   } else if (mode == MODE_HEAT) {
     if (currentinternalTemp <= (targetTemp + tempDiff)) {
       digitalWrite(coolPin, LOW);
@@ -349,6 +369,7 @@ void switchRelays() {
   }
 }
 
+//updates values on the character LCD
 void updateLCD() {
     //show current temp
     lcd.setCursor(5,0);
@@ -380,6 +401,7 @@ void updateLCD() {
     }
 }
 
+//outputs JSON to the network in response to a request
 static word outputJSON() {
     //handle TCP client
 
@@ -402,15 +424,15 @@ static word outputJSON() {
       "Content-Type: application/json\r\n"
       "Connection: close\r\n"
       "{\n"
-      "  currentinternaltemp: $S,\r\n"
-      "  currentexternaltemp: $S,\r\n"
-      "  targettemp: $S,\r\n"
-      "  tempdiff: $S,\r\n"
-      "  mode: $D,\r\n"
-      "  lastcool: $D,\r\n"
-      "  lastidle: $D,\r\n"
-      "  lastheat: $D,\r\n"
-      "  timecooling: $D\r\n"
+      "  \"currentinternaltemp\": $S,\r\n"
+      "  \"currentexternaltemp\": $S,\r\n"
+      "  \"targettemp\": $S,\r\n"
+      "  \"tempdiff\": $S,\r\n"
+      "  \"mode\": $D,\r\n"
+      "  \"lastcool\": $D,\r\n"
+      "  \"lastidle\": $D,\r\n"
+      "  \"lastheat\": $D,\r\n"
+      "  \"timecooling\": $D\r\n"
       "}"),itempbuffer,etempbuffer,ttempbuffer,dtempbuffer,mode,lastCool,lastIdle,lastHeat,timeCooling);
     return bfill.position();
 }
